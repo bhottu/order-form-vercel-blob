@@ -125,6 +125,7 @@ class OrderController extends Controller
             'date' => $this->todayYmd(),
         ];
 
+        $finalOrderNo = $orderNo;
         $attempts = 0;
         while (true) {
             $attempts++;
@@ -132,6 +133,9 @@ class OrderController extends Controller
                 $fresh = $this->blobs->readOrders();
                 $merged = $this->mergeOrder($fresh['orders'], $newOrder);
                 $this->blobs->writeOrders($merged, $fresh['etag']);
+                // Nomor FINAL (bisa berubah bila mergeOrder men-regenerate
+                // karena konflik) diambil dari array yang benar-benar ditulis.
+                $finalOrderNo = (string) ($merged[count($merged) - 1]['order_no'] ?? $orderNo);
                 break;
             } catch (RuntimeException $e) {
                 if ($e->getMessage() === 'CONCURRENT_WRITE' && $attempts < 3) {
@@ -150,7 +154,24 @@ class OrderController extends Controller
             }
         }
 
-        return redirect()->route('orders.index')->with('success', 'Order '.$orderNo.' berhasil disimpan.');
+        return redirect()
+            ->route('orders.success')
+            ->with('order_no', $finalOrderNo);
+    }
+
+    /**
+     * Halaman keberhasilan order. Nomor order diambil dari flash session
+     * yang di-set saat POST /order sukses — TIDAK membuat nomor baru di sini.
+     * Akses langsung tanpa order yang baru dibuat akan diarahkan ke /order.
+     */
+    public function success(): View|RedirectResponse
+    {
+        $orderNo = (string) session('order_no');
+        if (! preg_match('/^\d{8}$/', $orderNo)) {
+            return redirect()->route('orders.create');
+        }
+
+        return view('orders.success', ['orderNo' => $orderNo]);
     }
 
     public function index(VercelBlobService $blobs): View

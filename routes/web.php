@@ -14,6 +14,7 @@ Route::get('/', function () {
 // /order publik (boleh di-submit siapa pun), /orders khusus admin.
 Route::get('/order', [OrderController::class, 'create'])->name('orders.create');
 Route::post('/order', [OrderController::class, 'store'])->name('orders.store');
+Route::get('/order/success', [OrderController::class, 'success'])->name('orders.success');
 
 // Login admin (env-based, tanpa database). Juga tidak ditautkan di homepage.
 Route::get('/admin/login', [AdminLoginController::class, 'show'])->name('admin.login');

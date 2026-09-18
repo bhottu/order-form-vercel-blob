@@ -20,8 +20,8 @@ class AdminLoginController extends Controller
             'password' => ['required', 'string', 'max:128'],
         ]);
 
-        $expectedUser = (string) config('admin.username', '');
-        $expectedPass = (string) config('admin.password', '');
+        $expectedUser = (string) config('admin.username');
+        $expectedPass = (string) config('admin.password');
 
         if ($expectedUser === '' || $expectedPass === '') {
             return back()->withInput()->withErrors([

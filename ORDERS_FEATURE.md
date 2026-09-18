@@ -42,6 +42,12 @@ php artisan serve
 - Form: `GET /order` (submit `POST /order`) — **publik**, bisa di-submit siapa pun.
   Field No Order kini menampilkan angka 8 digit (readonly); nomor final
   tetap dicek ulang keunikan & konfliknya di server saat POST.
+  Saat submit, tombol memasuki state loading (`Mengirim Order... / 注文を保存中...`,
+  spinner + disabled) sampai request selesai, sehingga tidak bisa double-submit.
+  Bila gagal, pengguna tetap di `/order` dengan pesan error dan bisa mencoba lagi.
+  Bila sukses, redirect ke `GET /order/success` (halaman keberhasilan yang
+  menampilkan nomor order final dari flash session — tidak membuat nomor baru;
+  akses langsung tanpa order baru otomatis kembali ke `/order`).
 - Daftar: `GET /orders` — **khusus admin**, butuh login dulu.
 - Login admin: `GET /admin/login` + `POST /admin/login`
   (kredensial dari env `ADMIN_USERNAME` / `ADMIN_PASSWORD`, tanpa database),
@@ -59,7 +65,9 @@ php artisan test --filter=OrderTest
 ```
 
 Mencakup: render form, JPG original (hash bytes sama persis),
-PNG tetap PNG, multiple orders + refresh, homepage tidak berubah.
+PNG tetap PNG, multiple orders + refresh, redirect ke `/order/success`
+dengan nomor order yang benar, akses `/order/success` tanpa order kembali
+ke form, homepage tidak berubah.
 
 ## Deploy ke Vercel
 
@@ -116,7 +124,7 @@ app/Http/Middleware/EnsureAdminAuthenticated.php
 app/Services/VercelBlobService.php
 config/blob.php
 config/admin.php
-resources/views/orders/{layout,create,index}.blade.php
+resources/views/orders/{layout,create,success,index}.blade.php
 resources/views/admin/login.blade.php
 routes/web.php (+ route dev-only /blob-dev/*)
 tests/Feature/OrderTest.php

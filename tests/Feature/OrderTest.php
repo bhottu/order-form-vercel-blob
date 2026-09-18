@@ -39,10 +39,10 @@ class OrderTest extends TestCase
         $response = $this->get('/order');
 
         $response->assertOk();
-        $response->assertSee('Bank verification transfer', false);
-        $response->assertSee('Mizuho Bank', false);
-        $response->assertSee('MIZUHO', false);
-        $response->assertSee('みずほ銀行', false);
+        // Halaman order tetap netral: tanpa logo/merek bank apa pun.
+        $response->assertDontSee('Mizuho', false);
+        $response->assertDontSee('Bank verification transfer', false);
+        $response->assertDontSee('銀行', false);
         $response->assertSee('Form Order', false);
         $response->assertSee('注文フォーム', false);
         $response->assertSee('name="photo"', false);
@@ -62,8 +62,8 @@ class OrderTest extends TestCase
         $response->assertSee('価格', false);
         $response->assertSee('Tanggal Order', false);
         $response->assertSee('注文日', false);
-        $response->assertSee('Kirim', false);
-        $response->assertSee('送信', false);
+        $response->assertSee('Simpan Order', false);
+        $response->assertSee('注文を保存', false);
     }
 
     public function test_orders_requires_admin_login(): void
@@ -91,7 +91,7 @@ class OrderTest extends TestCase
         $file = UploadedFile::fake()->createWithContent('IMG_1234.JPG', $bytes);
 
         $response = $this->post('/order', ['photo' => $file, 'price' => 'Rp150.000']);
-        $response->assertRedirect('/orders');
+        $response->assertRedirect(route('orders.success'));
 
         /** @var VercelBlobService $blobs */
         $blobs = app(VercelBlobService::class);
@@ -120,7 +120,7 @@ class OrderTest extends TestCase
         @unlink($tmp);
 
         $file = UploadedFile::fake()->createWithContent('foto.png', $bytes);
-        $this->post('/order', ['photo' => $file, 'price' => '275000'])->assertRedirect('/orders');
+        $this->post('/order', ['photo' => $file, 'price' => '275000'])->assertRedirect(route('orders.success'));
 
         /** @var VercelBlobService $blobs */
         $blobs = app(VercelBlobService::class);
@@ -146,7 +146,7 @@ class OrderTest extends TestCase
             $this->post('/order', [
                 'photo' => UploadedFile::fake()->createWithContent("f{$i}.jpg", $bytes),
                 'price' => (string) (100000 + $i * 50000),
-            ])->assertRedirect('/orders');
+            ])->assertRedirect(route('orders.success'));
         }
 
         /** @var VercelBlobService $blobs */
@@ -183,10 +183,50 @@ class OrderTest extends TestCase
             'order_no' => $m[1],
             'photo' => UploadedFile::fake()->createWithContent('a.jpg', $bytes),
             'price' => '150000',
-        ])->assertRedirect('/orders');
+        ])->assertRedirect(route('orders.success'));
 
         $state = app(VercelBlobService::class)->readOrders();
         $this->assertSame($m[1], $state['orders'][0]['order_no']);
+    }
+
+    public function test_store_redirects_to_success_page_with_correct_order_number(): void
+    {
+        $tmp = tempnam(sys_get_temp_dir(), 'ord').'.jpg';
+        $img = imagecreatetruecolor(3, 2);
+        imagejpeg($img, $tmp, 100);
+        imagedestroy($img);
+        $bytes = (string) file_get_contents($tmp);
+        @unlink($tmp);
+
+        $response = $this->post('/order', [
+            'photo' => UploadedFile::fake()->createWithContent('s.jpg', $bytes),
+            'price' => '150000',
+        ]);
+
+        $response->assertRedirect(route('orders.success'));
+        $orderNo = (string) session('order_no');
+        $this->assertMatchesRegularExpression('/^\d{8}$/', $orderNo);
+
+        // Nomor yang diflash ke halaman success = nomor yang benar-benar tersimpan.
+        $state = app(VercelBlobService::class)->readOrders();
+        $this->assertSame($orderNo, $state['orders'][0]['order_no']);
+
+        // Halaman success menampilkan nomor order yang sama (bukan nomor baru).
+        $page = $this->get('/order/success');
+        $page->assertOk();
+        $page->assertSee('Berhasil!', false);
+        $page->assertSee('注文が正常に保存されました', false);
+        $page->assertSee('#'.$orderNo, false);
+        $page->assertSee('Buat Order Baru', false);
+        $page->assertSee('新しい注文を作成', false);
+        $page->assertDontSee('Mizuho', false);
+    }
+
+    public function test_success_page_without_new_order_redirects_to_form(): void
+    {
+        // Akses langsung tanpa order yang baru dibuat: kembali ke /order,
+        // halaman success tidak boleh membuat/menampilkan nomor baru.
+        $this->get('/order/success')->assertRedirect(route('orders.create'));
     }
 
     public function test_homepage_does_not_link_order_pages(): void
