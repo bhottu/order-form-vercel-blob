@@ -1,147 +1,181 @@
-# 📋 Order Form — Vercel Blob
+# 📋 Order Form — Laravel + Vercel Blob
 
-A lightweight and professional **order management form** built with **Laravel** and designed for deployment on **Vercel**.
+```FORM UNTUK YANG NGERTI AJA, CLUE : IMG EXIF DATA EXTRACTOR ```
 
-The application is designed to collect order information, upload original product images, and manage order records using lightweight storage without requiring a traditional relational database.
+Aplikasi **form order** ringan berbasis **Laravel** yang dirancang untuk deploy di **Vercel**, dengan penyimpanan **Vercel Blob** — **tanpa database**.
 
----
-
-## ✨ Features
-
-* 📝 Professional order form
-* 🔢 Automatic 8-digit order number
-* 📸 Original product image upload
-* 💰 Price in Indonesian Rupiah (IDR)
-* 📅 Automatic order date
-* 💳 Bank transfer verification information
-* 💾 JSON-based order data
-* ☁️ Vercel Blob image storage
-* 🇮🇩 Indonesian interface
-* 🇯🇵 Japanese labels alongside Indonesian
-* 📋 Order management/listing page
-* 🔒 No traditional relational database required
-* ⚡ Laravel-based
-* ▲ Vercel-ready
+Form order publik mengumpulkan nomor order otomatis, foto produk original, dan harga Rupiah. Semua data tersimpan sebagai `orders.json` + file foto di Vercel Blob, sehingga tetap persisten di lingkungan serverless.
 
 ---
 
-## 🛠️ Technology Stack
+## ✨ Fitur
 
-| Technology       | Purpose                        |
-| ---------------- | ------------------------------ |
-| **Laravel**      | Backend framework              |
-| **PHP**          | Application runtime            |
-| **Blade**        | Server-side UI                 |
-| **Vercel**       | Application hosting            |
-| **Vercel Blob**  | Product image storage          |
-| **JSON**         | Lightweight order data storage |
-| **Tailwind CSS** | UI styling                     |
+* 📝 Form order publik di `/order` (boleh di-submit siapa pun)
+* 🔢 Nomor order 8 digit otomatis — readonly di form, keunikan dicek ulang di server saat submit
+* 📸 Upload foto produk **original** (JPG / PNG / WebP / GIF, maks 10 MB) — tanpa compress/resize/convert
+* 💰 Harga Rupiah (IDR) dengan auto-format ribuan saat mengetik
+* 📅 Tanggal order otomatis (zona **Asia/Jakarta**)
+* 🚫 Anti double-submit — tombol loading (spinner + disabled) sampai request selesai
+* ✅ Halaman sukses `/order/success` dengan nomor order final
+* 🔐 Daftar order `/orders` khusus admin — login env-based tanpa database
+* 🧹 Cleanup otomatis foto di Blob bila penulisan data order gagal
+* 💾 Data order JSON (`orders.json`) dengan tulis kondisional ETag (retry 3x)
+* 🧪 Mode local-dev fallback tanpa token (`storage/app/blob-dev/`)
+* 🇮🇩🇯🇵 Antarmuka dwibahasa Indonesia + Jepang
+* ▲ Siap deploy ke Vercel (runtime `vercel-php`)
 
 ---
 
-## 📂 Project Structure
+## 🗺️ Halaman & Route
+
+| Route | Halaman | Akses | Keterangan |
+| --- | --- | --- | --- |
+| `GET /` | Homepage Laravel default | Publik | Sengaja **tidak** menautkan fitur order/admin |
+| `GET /order` | Form Order / 注文フォーム | Publik | Submit via `POST /order` |
+| `GET /order/success` | Order Berhasil / 注文完了 | Publik* | Nomor order final dari flash session |
+| `GET /admin/login` | Login Admin | Publik | Kredensial dari env, tanpa database |
+| `GET /orders` | Daftar Order (admin) | Admin | Dilindungi middleware `EnsureAdminAuthenticated` |
+| `POST /admin/login` · `POST /admin/logout` | — | — | Login / logout admin |
+| `GET /blob-dev/{path}` | — | Dev only | Penyaji file fallback lokal; otomatis 404 bila token Blob terpasang |
+
+\* Akses `/order/success` langsung tanpa order yang baru dibuat otomatis diarahkan kembali ke `/order`.
+
+---
+
+## 🧾 Isi Form Order
+
+Form `GET /order` → `resources/views/orders/create.blade.php`:
+
+| Field | Input | Wajib | Keterangan |
+| --- | --- | --- | --- |
+| **Nomor Order** (注文番号) | `order_no` | Otomatis | Readonly, preview 8 digit; nomor final dibuat ulang & dicek duplikat di server saat POST |
+| **Foto Produk** (商品写真) | `photo` | ✅ | JPG / PNG / WebP / GIF, maks 10 MB; preview di browser via `URL.createObjectURL()` |
+| **Harga** (価格) | `price` | ✅ | Rupiah — menerima `150000` maupun `Rp150.000`; auto-format ribuan saat mengetik |
+| **Tanggal Order** (注文日) | — | Otomatis | Diisi sistem (Asia/Jakarta), tidak di-input pengguna |
+
+Validasi server (`OrderController::store()`):
+
+* Foto: whitelist MIME (`image/jpeg|png|webp|gif`), ekstensi berbahaya ditolak, ukuran maks 10 MB.
+* Harga: diparse ke integer, rentang 1.000 – 999.999.999.999.
+* Nomor order: bila bentrok dengan data existing, digenerate ulang otomatis.
+* Bila penulisan data order gagal, foto yang sudah ter-upload **dibersihkan** dari Blob.
+
+---
+
+## 🔄 Alur Submit
 
 ```text
-order-form-vercel-blob/
+GET /order
+    │  preview nomor 8 digit (readonly)
+    ▼
+POST /order ── validasi (foto, harga, nomor)
+    │
+    ├─ gagal ──► tetap di /order + pesan error (bisa coba lagi)
+    │
+    └─ sukses
+        ├─ upload foto original ──► Blob items/<8digit>-<random6>.<ext>
+        ├─ merge + tulis orders.json (ETag conditional, retry maks 3x)
+        └─ redirect ──► GET /order/success (nomor order final)
+```
+
+---
+
+## 🔐 Halaman Admin
+
+* `GET /orders` menampilkan tabel: **No Order**, **Foto Items** (thumbnail — klik untuk membuka foto original), **Harga**, **Tanggal** — diurutkan dari yang terbaru. Jumlah order dan status koneksi Blob tampil di header.
+* Login memakai `ADMIN_USERNAME` / `ADMIN_PASSWORD` dari environment — perbandingan timing-safe (`hash_equals`), pesan error tidak membocorkan field mana yang salah, tanpa database.
+* Middleware `EnsureAdminAuthenticated` menyimpan URL tujuan (`url.intended`) agar setelah login pengguna kembali ke halaman yang diminta.
+
+---
+
+## 🛠️ Teknologi
+
+| Teknologi | Peran |
+| --- | --- |
+| **Laravel 12** / **PHP 8.2+** | Backend & runtime |
+| **Blade** | Server-side UI |
+| **Tailwind CSS 4** | Styling (halaman order/admin via browser CDN build) |
+| **Vercel Blob REST API** | Penyimpanan `orders.json` + foto (`app/Services/VercelBlobService.php`) |
+| **Vercel** (`vercel-php@0.7.4`) | Hosting serverless |
+| **JSON** | Penyimpanan data order ringan — tanpa database |
+
+> Session/cache/queue lokal memakai `file`/`sync`, jadi fitur order tidak butuh database sama sekali. Database bawaan Laravel (sqlite) tidak dipakai oleh fitur ini.
+
+---
+
+## 📂 Struktur Proyek
+
+```text
+├── api/index.php                       # Entry point Vercel → public/index.php
 ├── app/
-├── bootstrap/
+│   ├── Http/
+│   │   ├── Controllers/
+│   │   │   ├── OrderController.php     # Form, submit, halaman sukses, daftar order
+│   │   │   └── AdminLoginController.php
+│   │   └── Middleware/
+│   │       └── EnsureAdminAuthenticated.php
+│   └── Services/
+│       └── VercelBlobService.php       # Client Vercel Blob REST API
 ├── config/
-├── database/
-├── public/
-├── resources/
-├── routes/
-├── storage/
-├── vendor/
-├── .env.example
-├── composer.json
-└── README.md
+│   ├── admin.php                       # ADMIN_USERNAME / ADMIN_PASSWORD
+│   └── blob.php                        # Token & opsi Vercel Blob
+├── resources/views/
+│   ├── welcome.blade.php               # Homepage default (tanpa tautan fitur)
+│   ├── admin/login.blade.php           # Login admin
+│   └── orders/
+│       ├── layout.blade.php            # Layout bersama halaman order
+│       ├── create.blade.php            # Form order
+│       ├── success.blade.php           # Order berhasil
+│       └── index.blade.php             # Daftar order (admin)
+├── routes/web.php                      # Semua route + route dev-only /blob-dev/*
+├── storage/app/blob-dev/               # Fallback lokal saat token Blob kosong
+├── tests/Feature/OrderTest.php
+├── vercel.json                         # Runtime + rewrite untuk Vercel
+├── ORDERS_FEATURE.md                   # Dokumentasi teknis fitur order
+└── composer.json
 ```
 
 ---
 
-## 🧾 Order Information
+## 💾 Bentuk Data Order
 
-Each order can contain information such as:
-
-| Field                          | Description                               |
-| ------------------------------ | ----------------------------------------- |
-| **Order Number**               | Automatically generated 8-digit number    |
-| **Product**                    | Product/order information                 |
-| **Product Image**              | Original uploaded image                   |
-| **Price**                      | Price in Indonesian Rupiah                |
-| **Order Date**                 | Automatically generated date              |
-| **Bank Transfer Verification** | Transfer-related verification information |
-
----
-
-## ☁️ Vercel Blob
-
-Product images are stored using **Vercel Blob** instead of relying on the local Laravel filesystem.
-
-This is intended to make image storage suitable for a serverless deployment environment.
-
-Uploaded product images are preserved without intentional image compression.
-
-### Storage Concept
-
-```text
-Order Form
-    │
-    ├── Order Information
-    │       └── JSON storage
-    │
-    └── Product Image
-            └── Vercel Blob
-```
-
----
-
-## 💾 Order Data
-
-The project uses a lightweight JSON-based approach for order records rather than a traditional relational database.
-
-Example:
-
-```text
-orders.json
-```
-
-Conceptually:
+`orders.json` di Vercel Blob:
 
 ```json
-{
-    "order_number": "12345678",
-    "price": 150000,
-    "order_date": "2026-09-18",
-    "image": "https://..."
-}
+[
+    {
+        "order_no": "12345678",
+        "photo": "items/12345678-aB3xY9.jpg",
+        "price": 150000,
+        "date": "2026-09-18"
+    }
+]
 ```
 
-The exact structure may evolve as the application develops.
+* `photo` berisi **pathname Blob**; URL publiknya dibangun saat render daftar order.
+* Foto diupload apa adanya (bytes original) — tidak ada resize, compress, convert, atau optimize.
+* Penulisan memakai conditional write `x-if-match` (ETag) dengan retry maks 3x untuk mengurangi risiko lost update.
 
 ---
 
-## 🌏 Bilingual Interface
+## ⚙️ Konfigurasi Environment
 
-The interface uses Indonesian as the primary language with Japanese displayed alongside important labels.
+Salin `.env.example` → `.env`, lalu isi:
 
-Examples:
+| Variable | Wajib | Keterangan |
+| --- | --- | --- |
+| `APP_KEY` | ✅ | `php artisan key:generate` |
+| `BLOB_READ_WRITE_TOKEN` | Production | Token Vercel Blob (Dashboard → Storage → Blob). **Kosong = mode local-dev fallback** |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | ✅ (untuk `/orders`) | Kredensial login admin, tanpa database |
+| `SESSION_DRIVER=cookie` | Vercel | Wajib di serverless agar login admin bertahan antar instance |
+| `BLOB_API_URL` | Opsional | Default `https://vercel.com/api/blob` |
+| `BLOB_ORDERS_PATHNAME` | Opsional | Default `orders.json` |
 
-| Indonesian                 | Japanese |
-| -------------------------- | -------- |
-| Form Order                 | 注文フォーム   |
-| Nomor Order                | 注文番号     |
-| Foto Produk                | 商品写真     |
-| Harga                      | 価格       |
-| Tanggal Order              | 注文日      |
-| Kirim                      | 送信       |
-| Bank Verification Transfer | 銀行振込確認   |
-
-The bilingual design is intended to keep the interface professional and easy to understand.
+**Mode local-dev fallback** — tanpa `BLOB_READ_WRITE_TOKEN`, data & foto disimpan ke `storage/app/blob-dev/` dan disajikan lewat route `/blob-dev/{path}`. Fallback ini hanya untuk pengembangan offline, **bukan** persistent storage di Vercel.
 
 ---
 
-## 🚀 Installation
+## 🚀 Menjalankan Lokal
 
 ### 1. Clone Repository
 
@@ -156,116 +190,105 @@ cd order-form-vercel-blob
 composer install
 ```
 
-### 3. Create Environment File
+### 3. Siapkan Environment
 
 ```bash
 cp .env.example .env
+php artisan key:generate
 ```
 
-For Windows PowerShell, you can use:
+Untuk Windows PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-### 4. Generate Application Key
-
-```bash
-php artisan key:generate
-```
-
-### 5. Configure Environment
-
-Configure the required values in `.env`.
-
-Example:
-
-```env
-APP_NAME="Order Form"
-APP_ENV=local
-APP_KEY=
-APP_DEBUG=true
-APP_URL=http://127.0.0.1:8000
-
-BLOB_READ_WRITE_TOKEN=
-```
-
-### 6. Run Laravel
+### 4. Jalankan Server
 
 ```bash
 php artisan serve
 ```
 
-Open:
+Lalu buka:
 
-```text
-http://127.0.0.1:8000
+| URL | Halaman |
+| --- | --- |
+| `http://127.0.0.1:8000/order` | Form order (publik) |
+| `http://127.0.0.1:8000/admin/login` | Login admin |
+| `http://127.0.0.1:8000/orders` | Daftar order (perlu login admin) |
+
+---
+
+## 🧪 Testing
+
+```bash
+php artisan test --filter=OrderTest
 ```
 
----
-
-## ▲ Vercel Deployment
-
-This project is designed to work with **Vercel** and **Vercel Blob**.
-
-Before deployment, configure the required environment variables in the Vercel project settings.
-
-Example:
-
-```env
-BLOB_READ_WRITE_TOKEN=your_vercel_blob_token
-```
-
-> Never commit your real Vercel Blob token to GitHub.
+Mencakup: render form + nomor order 8 digit, upload JPG/PNG original (hash bytes identik), multiple order + refresh, redirect ke `/order/success` dengan nomor benar, akses `/order/success` tanpa order kembali ke form, proteksi `/orders` + login admin, dan homepage tidak berubah.
 
 ---
 
-## 🔐 Security
+## ▲ Deploy ke Vercel
 
-Important security practices:
+1. `vercel.json` memakai runtime **`vercel-php@0.7.4`** (PHP 8.3) dan me-route semua request ke `api/index.php` yang meneruskan ke `public/index.php`. `composer install` dijalankan otomatis oleh Vercel.
+2. Set Environment Variables di dashboard Vercel (Production + Preview):
+   * `BLOB_READ_WRITE_TOKEN` — token Vercel Blob
+   * `ADMIN_USERNAME` + `ADMIN_PASSWORD` — kredensial login `/orders`
+   * `SESSION_DRIVER=cookie` — **wajib** di serverless agar login admin tidak hilang antar instance
+   * Opsional: `APP_KEY`, `APP_URL`, `BLOB_ORDERS_PATHNAME`
+3. Deploy:
 
-* Never commit `.env`
-* Never expose `BLOB_READ_WRITE_TOKEN`
-* Validate uploaded files
-* Validate image MIME types
-* Apply appropriate upload size limits
-* Validate order input
-* Sanitize user-provided data
-* Protect private order-management pages
-* Keep storage credentials server-side
-* Do not place secret credentials inside frontend JavaScript
+   ```bash
+   vercel --prod
+   ```
+
+4. Verifikasi: buat order di `/order`, cek `/orders`, lalu redeploy dan pastikan data tetap ada (karena tersimpan di Blob, bukan filesystem lokal).
+
+> 🔒 Jangan pernah commit token Vercel Blob atau kredensial admin ke GitHub.
 
 ---
 
-## 🎨 Design
+## 🔐 Keamanan
 
-The application uses a:
+* Token & kredensial hanya lewat environment variable — tidak pernah di-commit.
+* Login admin: perbandingan timing-safe (`hash_equals`), pesan error tidak membocorkan field yang salah, session di-regenerate saat login/logout.
+* Foto: whitelist MIME, penolakan ekstensi berbahaya (`php`, `phtml`, `phar`, `exe`, `sh`, `js`, `html`, `svg`, ...), batas ukuran 10 MB.
+* Nama file disimpan sebagai `items/<8digit>-<random6>.<ext>` — bukan nama file dari pengguna.
+* Pathname Blob divalidasi (tanpa `..`, tanpa awalan `/`, tanpa karakter berbahaya).
+* `/orders` dilindungi middleware session; route dev `/blob-dev/*` otomatis mati saat token Blob terpasang.
+* CSRF token di semua form; input divalidasi di server.
 
-* Professional interface
-* Clean layout
-* Modern appearance
-* Responsive design
-* Business-oriented visual style
-* Indonesian/Japanese bilingual interface
-* Simple and uncluttered form
+---
 
-The project intentionally avoids a **hacker/terminal-style design**.
+## 🌏 Antarmuka Dwibahasa
+
+Label utama memakai bahasa Indonesia dengan padanan bahasa Jepang yang lebih halus:
+
+| Indonesia | Jepang |
+| --- | --- |
+| Form Order | 注文フォーム |
+| Nomor Order | 注文番号 |
+| Foto Produk | 商品写真 |
+| Harga | 価格 |
+| Tanggal Order | 注文日 |
+| Simpan Order / Mengirim Order... | 注文を保存 / 注文を保存中... |
+| Order Berhasil | 注文完了 |
+| Buat Order Baru | 新しい注文を作成 |
 
 ---
 
 ## 📌 Repository
 
-GitHub:
-
 **https://github.com/bhottu/order-form-vercel-blob**
+
+Dokumentasi teknis lengkap fitur order (detail REST API Blob, concurrency, keaslian file original): lihat **[ORDERS_FEATURE.md](ORDERS_FEATURE.md)**.
 
 ---
 
 ## 📄 License
 
-This project is currently maintained as a custom application.
-
-If the project is later distributed as open-source software, an appropriate open-source license can be added here.
+Proyek ini di-maintain sebagai aplikasi kustom. Bila nanti didistribusikan sebagai open-source, lisensi yang sesuai dapat ditambahkan di sini.
 
 ---
 
@@ -273,6 +296,6 @@ If the project is later distributed as open-source software, an appropriate open
 
 **Laravel × Vercel Blob**
 
-Built for lightweight and professional order management.
+Form order ringan tanpa database — data tersimpan di Blob.
 
 </div>
