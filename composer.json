@@ -41,9 +41,8 @@
             "npm install",
             "npm run build"
         ],
-        "vercel": [
-        "@php artisan view:clear",
-        "@php artisan optimize:clear"
+       "vercel": [
+            "@php artisan view:clear"
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
